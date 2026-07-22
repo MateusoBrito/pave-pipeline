@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # 1. MongoDB (Data Lake Bruto)
+  mongodb:
+    image: mongo:latest
+    container_name: panorama_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+    volumes:
+      - mongo_data:/data/db
+
+  # 2. PostgreSQL (Modelo Analítico)
+  postgres:
+    image: postgres:16-alpine
+    container_name: panorama_postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: panorama_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 3. Redis (Cache)
+  redis:
+    image: redis:alpine
+    container_name: panorama_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # 4. Airflow Standalone (Sua ferramenta de orquestração)
+  airflow:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: panorama_airflow
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
+      - AIRFLOW__CORE__FERNET_KEY=46ExB2A5_0D35m4M63zR14iM5_G61m1a_A8=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags            # Pasta onde vão ficar suas DAGs
+      - ./pipelines:/opt/airflow/pipelines  # Onde fica o código de coleta/NLP
+    command: standalone
+
+volumes:
+  mongo_data:
+  postgres_data:
