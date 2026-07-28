@@ -36,7 +36,7 @@ services:
     ports:
       - "6379:6379"
 
-  # 4. Airflow Standalone (Sua ferramenta de orquestração)
+  # 4. Airflow Standalone
   airflow:
     image: apache/airflow:2.8.1-python3.11
     container_name: panorama_airflow
@@ -51,8 +51,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./dags:/opt/airflow/dags            # Pasta onde vão ficar suas DAGs
-      - ./pipelines:/opt/airflow/pipelines  # Onde fica o código de coleta/NLP
+      - ./dags:/opt/airflow/dags           
+      - ./pipelines:/opt/airflow/pipelines  
     command: standalone
 
 volumes:
