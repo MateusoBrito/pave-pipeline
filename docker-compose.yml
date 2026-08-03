@@ -1,5 +1,27 @@
 version: '3.8'
 
+# ---------------------------------------------------------
+# CONFIGURAÇÕES COMUNS DO AIRFLOW (Na raiz, FORA de services)
+# ---------------------------------------------------------
+x-airflow-common:
+  &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.8.1}
+  environment:
+    &airflow-common-env
+    AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW__WEBSERVER__SECRET_KEY}"
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
+    AIRFLOW__CORE__FERNET_KEY: wX9p1q6Z8V_uR2m4N_7T3y5k9G_0C8b2H5v1A_5s9K8=
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+  volumes:
+    - ./dags:/opt/airflow/dags           
+    - ./pipelines:/opt/airflow/pipelines  
+    - ./config:/opt/airflow/config
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_started
+
 services:
   # 1. MongoDB (Data Lake Bruto)
   mongodb:
@@ -35,27 +57,6 @@ services:
     restart: always
     ports:
       - "6379:6379"
-
-# ---------------------------------------------------------
-  # CONFIGURAÇÕES COMUNS DO AIRFLOW (Evita repetição de código)
-  # ---------------------------------------------------------
-  x-airflow-common:
-    &airflow-common
-    image: apache/airflow:2.8.1-python3.11
-    environment:
-      &airflow-common-env
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
-      AIRFLOW__CORE__FERNET_KEY: wX9p1q6Z8V_uR2m4N_7T3y5k9G_0C8b2H5v1A_5s9K8=
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-    volumes:
-      - ./dags:/opt/airflow/dags           
-      - ./pipelines:/opt/airflow/pipelines  
-      - ./config:/opt/airflow/config
-    user: "${AIRFLOW_UID:-50000}:0"
-    depends_on:
-      postgres:
-        condition: service_started
 
   # ---------------------------------------------------------
   # SERVIÇOS DO AIRFLOW DIVIDIDOS

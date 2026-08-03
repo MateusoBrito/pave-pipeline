@@ -7,7 +7,7 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 
 def read_entities():
-    file_path = os.path.join(os.path.dirname(__file__), "configs", "entities_config.yaml")
+    file_path = os.path.join(os.path.dirname(__file__), ".." ,"config", "entities_config.yaml")
 
     print(f"Loading entities from: {file_path}")
     with open(file_path, "r") as file:
@@ -36,7 +36,7 @@ with DAG(
         python_callable = read_entities
     )
 
-    file_script_path = os.path.join(os.path.dirname(__file__), "pipelines", "collectors", "youtube_collector.py")
+    file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
     task_collect_youtube = BashOperator(
         task_id = "collect_youtube",
         bash_command = f"echo 'Iniciando {file_script_path}...' && sleep 5 && echo 'Coleta finalizada com sucesso!'"
