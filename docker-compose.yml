@@ -36,24 +36,70 @@ services:
     ports:
       - "6379:6379"
 
-  # 4. Airflow Standalone (Sua ferramenta de orquestração)
-  airflow:
+# ---------------------------------------------------------
+  # CONFIGURAÇÕES COMUNS DO AIRFLOW (Evita repetição de código)
+  # ---------------------------------------------------------
+  x-airflow-common:
+    &airflow-common
     image: apache/airflow:2.8.1-python3.11
-    container_name: panorama_airflow
-    restart: always
-    depends_on:
-      - postgres
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
-      - AIRFLOW__CORE__FERNET_KEY=46ExB2A5_0D35m4M63zR14iM5_G61m1a_A8=
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      &airflow-common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
+      AIRFLOW__CORE__FERNET_KEY: wX9p1q6Z8V_uR2m4N_7T3y5k9G_0C8b2H5v1A_5s9K8=
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+    volumes:
+      - ./dags:/opt/airflow/dags           
+      - ./pipelines:/opt/airflow/pipelines  
+      - ./config:/opt/airflow/config
+    user: "${AIRFLOW_UID:-50000}:0"
+    depends_on:
+      postgres:
+        condition: service_started
+
+  # ---------------------------------------------------------
+  # SERVIÇOS DO AIRFLOW DIVIDIDOS
+  # ---------------------------------------------------------
+  
+  # 1. Serviço que inicializa o banco e força a criação do usuário
+  airflow-init:
+    <<: *airflow-common
+    container_name: panorama_airflow_init
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+      _AIRFLOW_WWW_USER_ROLE: Admin
+      _AIRFLOW_WWW_USER_EMAIL: admin@panorama.com
+
+  # 2. Interface Web (A tela do localhost:8080)
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: panorama_airflow_webserver
+    command: webserver
     ports:
       - "8080:8080"
-    volumes:
-      - ./dags:/opt/airflow/dags            # Pasta onde vão ficar suas DAGs
-      - ./pipelines:/opt/airflow/pipelines  # Onde fica o código de coleta/NLP
-    command: standalone
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_started
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 3. Orquestrador (Quem dispara as DAGs)
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: panorama_airflow_scheduler
+    command: scheduler
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_started
+      airflow-init:
+        condition: service_completed_successfully
 
 volumes:
   mongo_data:
