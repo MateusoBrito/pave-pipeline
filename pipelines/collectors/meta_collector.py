@@ -1,26 +1,44 @@
 import requests
 import time
-import csv
 import os
+import argparse
+from datetime import datetime
+import logging
+from pymongo import MongoClient, InsertOne
+from pymongo.errors import BulkWriteError, PyMongoError
 
-#   export META_ACCESS_TOKEN="seu_token_aqui"    (Linux/Mac)
-#   setx META_ACCESS_TOKEN "seu_token_aqui"      (Windows)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("coleta_meta")
 
-ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
+MONGO_USER = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+MONGO_PASSWORD = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+MONGO_DATABASE = os.getenv("MONGO_DATABASE", "panorama")
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION_META", "meta")
 
-if not ACCESS_TOKEN:
+if not MONGO_USER or not MONGO_PASSWORD:
     raise SystemExit(
-        "Defina a variável de ambiente META_ACCESS_TOKEN antes de rodar o script."
+        "Defina as variaveis de ambiente MONGO_INITDB_ROOT_USERNAME e "
+        "MONGO_INITDB_ROOT_PASSWORD antes de rodar o script."
     )
+
+MONGO_URI = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/"
+
+
+ACCESS_TOKEN = "EAAObkoZCck74BSPVirfmuSxgrgdj4sPcr6pnf1jAVjRSYehBGfZCaCPZBXx5uYHHOJd9Qw3nVzLCaGVBIIOh2a7asQ7Q0ABZB6zQOI3KagNOcyqo92ZBiRtVy28Nhj9qYyMSJthjkMnwKSVoJlhrM5xUZAfdSw7sNBguuNtDeffnagCZCL9u9zXKZBr7DDAz4ZB9pQPpoVpy7mKQZA6SEecCBmLYjLn5seVvmawZCwZCXIobl5tD4hM2"
 
 GRAPH_VERSION = "v21.0"
 BASE_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
 ADS_URL = f"{BASE_URL}/ads_archive"
 
-PERFIS = {
-    "Lula": "267949976607343",
-    "Flavio Bolsonaro": "156951837773645",
-}
+# PERFIS = {
+#     "Lula": "267949976607343",
+#     "Flavio Bolsonaro": "156951837773645",
+# }
 
 FIELDS = ",".join([
     "page_name",
@@ -34,7 +52,7 @@ FIELDS = ",".join([
 ])
 
 
-def coletar_dados(page_id):
+def coletar_dados(page_id, data_inicio, data_fim):
     params = {
         "access_token": ACCESS_TOKEN,
         "search_page_ids": f'["{page_id}"]',
@@ -56,18 +74,29 @@ def coletar_dados(page_id):
             response = requests.get(next_url, timeout=30)
 
         if response.status_code != 200:
-            print(f"Erro {response.status_code} para page_id={page_id}: {response.text}")
+            logger.error(f"Erro {response.status_code} para page_id={page_id}: {response.text}")
             break
 
         data = response.json()
 
         if "error" in data:
-            print(f"Erro da API para page_id={page_id}: {data['error']}")
+            logger.error(f"Erro da API para page_id={page_id}: {data['error']}")
             break
 
         pagina = data.get("data", [])
-        dados_totais.extend(pagina)
-        print(f"[{page_id}] +{len(pagina)} anúncios (total: {len(dados_totais)})")
+        
+        for ad in pagina:
+            ad_start = ad.get("ad_delivery_start_time")
+            if not ad_start:
+                dados_totais.append(ad)
+                continue
+            
+            # Formato do ad_delivery_start_time costuma ser YYYY-MM-DD
+            if data_inicio <= ad_start[:10] <= data_fim:
+                ad["_entidade_busca"] = page_id
+                dados_totais.append(ad)
+
+        logger.info(f"[{page_id}] +{len(pagina)} anúncios processados (total filtrado: {len(dados_totais)})")
 
         next_url = data.get("paging", {}).get("next")
         time.sleep(1)  # respeita rate limit
@@ -75,32 +104,50 @@ def coletar_dados(page_id):
     return dados_totais
 
 
-def salvar_csv(dados, nome_arquivo):
+def salvar_mongodb(dados, entidade):
     if not dados:
-        print(f"Nenhum dado para salvar em {nome_arquivo}")
+        logger.warning(f"[{entidade}] Nenhum dado para salvar no MongoDB.")
         return
 
-    # Une todas as chaves possíveis (nem todo anúncio tem todos os campos)
-    campos = set()
-    for item in dados:
-        campos.update(item.keys())
-    campos = sorted(campos)
+    cliente = None
+    try:
+        cliente = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        cliente.admin.command("ping")
 
-    with open(nome_arquivo, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=campos)
-        writer.writeheader()
-        for item in dados:
-            writer.writerow(item)
+        colecao = cliente[MONGO_DATABASE][MONGO_COLLECTION]
+        # Meta usa id para os anúncios
+        colecao.create_index("id", unique=True, background=True)
 
-    print(f"Salvo: {nome_arquivo} ({len(dados)} registros)")
+        operacoes = [InsertOne(doc) for doc in dados]
+
+        try:
+            resultado = colecao.bulk_write(operacoes, ordered=False)
+            logger.info(f"[{entidade}] Inseridos: {resultado.inserted_count} novos documentos.")
+        except BulkWriteError as bwe:
+            inseridos = bwe.details.get("nInserted", 0)
+            duplicados = sum(
+                1 for e in bwe.details.get("writeErrors", []) if e.get("code") == 11000
+            )
+            logger.warning(f"[{entidade}] Insercao parcial: {inseridos} inseridos, {duplicados} ja existiam.")
+
+    except PyMongoError as erro:
+        logger.error(f"[{entidade}] Erro ao conectar/inserir no MongoDB: {erro}")
+        raise
+    finally:
+        if cliente is not None:
+            cliente.close()
 
 
 def main():
-    for nome, page_id in PERFIS.items():
-        print(f"\n=== Coletando anúncios: {nome} (page_id={page_id}) ===")
-        dados = coletar_dados(page_id)
-        nome_arquivo = f"ads_{nome.lower().replace(' ', '_')}.csv"
-        salvar_csv(dados, nome_arquivo)
+    parser = argparse.ArgumentParser(description="Coletor do Meta")
+    parser.add_argument("--entidade", type=str, required=True, help="Page ID (ex: 267949976607343)")
+    parser.add_argument("--data-inicio", type=str, required=True, help="Data de início (YYYY-MM-DD)")
+    parser.add_argument("--data-fim", type=str, required=True, help="Data de fim (YYYY-MM-DD)")
+    args = parser.parse_args()
+
+    logger.info(f"=== Coletando anúncios para page_id={args.entidade} ===")
+    dados = coletar_dados(page_id=args.entidade, data_inicio=args.data_inicio, data_fim=args.data_fim)
+    salvar_mongodb(dados, entidade=args.entidade)
 
 
 if __name__ == "__main__":
