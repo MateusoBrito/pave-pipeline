@@ -1,0 +1,20 @@
+# Arquivo de configuração de entidades para os DAGs (Airflow)
+
+reddit:
+  # Lista de subreddits que você deseja coletar
+  subreddits:
+    - "brasilivre"
+    - "brasil"
+
+meta:
+  # Lista de páginas (perfis) que você deseja coletar no Meta Ads
+  perfis:
+    - nome: "Lula"
+      page_id: "267949976607343"
+    - nome: "Flavio Bolsonaro"
+      page_id: "156951837773645"
+
+# (Opcional) Configurações globais que podem ser úteis para o DAG
+# configuracoes_globais:
+#   data_inicio: "2024-01-01"
+#   data_fim: "2024-12-31"

@@ -1,37 +1,44 @@
 version: '3.8'
 
 services:
-  # 1. MongoDB (Data Lake Bruto)
   mongodb:
-    image: mongo:latest
-    container_name: panorama_mongodb
-    restart: always
-    ports:
-      - "27017:27017"
+    image: mongo:7.0
+    container_name: panorama-mongodb
+    restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_BIND_ADDRESS:-127.0.0.1}:27017:27017"
     volumes:
       - mongo_data:/data/db
+      - mongo_configdb:/data/configdb
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   # 2. PostgreSQL (Modelo Analítico)
   postgres:
     image: postgres:16-alpine
-    container_name: panorama_postgres
+    container_name: panorama-postgres
     restart: always
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: panorama_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   # 3. Redis (Cache)
   redis:
     image: redis:alpine
-    container_name: panorama_redis
+    container_name: panorama-redis
     restart: always
     ports:
       - "6379:6379"
@@ -39,22 +46,29 @@ services:
   # 4. Airflow Standalone (Sua ferramenta de orquestração)
   airflow:
     image: apache/airflow:2.8.1-python3.11
-    container_name: panorama_airflow
+    container_name: panorama-airflow
     restart: always
     depends_on:
       - postgres
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
-      - AIRFLOW__CORE__FERNET_KEY=46ExB2A5_0D35m4M63zR14iM5_G61m1a_A8=
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _PIP_ADDITIONAL_REQUIREMENTS=pymongo requests pyyaml
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
     ports:
       - "8080:8080"
     volumes:
       - ./dags:/opt/airflow/dags            # Pasta onde vão ficar suas DAGs
       - ./pipelines:/opt/airflow/pipelines  # Onde fica o código de coleta/NLP
+      - ./config:/opt/airflow/config        # Mapeando o entities.yaml para o Airflow ler
     command: standalone
 
 volumes:
   mongo_data:
+  mongo_configdb:
   postgres_data:
