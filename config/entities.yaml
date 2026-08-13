@@ -1,0 +1,31 @@
+reddit:
+  subreddits:
+    - "brasilivre"
+    - "brasil"
+
+  text_columns:
+    - "title"
+    - "selftext"
+
+meta:
+  perfis:
+    - nome: "Lula"
+      page_id: "267949976607343"
+    - nome: "Flavio Bolsonaro"
+      page_id: "156951837773645"
+
+youtube:
+  canais:
+    - nome: "Lula"
+      channel_id: "UCvO2BExvkAbGMsTGnEnI_Ng"
+    - nome: "Flavio Bolsonaro"
+      channel_id: "UCl2HptoHv6PjZMQAwTdA--Q"
+  
+  text_columns:
+    comentarios:
+      - "text"
+
+    videos:
+      - "title"
+      - "description"
+

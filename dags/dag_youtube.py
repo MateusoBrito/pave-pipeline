@@ -3,18 +3,16 @@ import yaml
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 
-def read_entities():
-    file_path = os.path.join(os.path.dirname(__file__), ".." ,"config", "entities_config.yaml")
-
-    print(f"Loading entities from: {file_path}")
+file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
+try:
     with open(file_path, "r") as file:
-        entities = yaml.safe_load(file)
-    print(f"Entities loaded: {entities}")
-
-    return entities
+        entities_config = yaml.safe_load(file)
+        canais = entities_config.get("youtube", {}).get("canais", [])
+except Exception as e:
+    print(f"Erro ao carregar entidades: {e}")
+    canais = []
 
 default_args = {
     "owner":        "airflow",
@@ -27,19 +25,24 @@ with DAG(
     "collect_youtube_dag",
     schedule_interval = "@daily",
     default_args = default_args,
-    catchup = False,
+    catchup = True,
     tags = ["youtube", "collector"]
 ) as dag:
 
-    task_read_entities = PythonOperator(
-        task_id = "read_entities",
-        python_callable = read_entities
-    )
-
     file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
-    task_collect_youtube = BashOperator(
-        task_id = "collect_youtube",
-        bash_command = f"echo 'Iniciando {file_script_path}...' && sleep 5 && echo 'Coleta finalizada com sucesso!'"
-    )
 
-    task_read_entities >> task_collect_youtube
+    for canal in canais:
+        channel_id = canal.get("channel_id")
+        nome = canal.get("nome", "").replace(" ", "_").lower()
+        
+        comando = (
+            f"python3 {file_script_path} "
+            f"--entidade {channel_id} "
+            f"--data-inicio {{{{ data_interval_start | ds }}}} "
+            f"--data-fim {{{{ data_interval_end | ds }}}}"
+        )
+
+        task_collect_youtube = BashOperator(
+            task_id = f"collect_youtube_{nome}",
+            bash_command = comando
+        )

@@ -23,85 +23,76 @@ x-airflow-common:
       condition: service_started
 
 services:
-  # 1. MongoDB (Data Lake Bruto)
   mongodb:
-    image: mongo:latest
-    container_name: panorama_mongodb
-    restart: always
-    ports:
-      - "27017:27017"
+    image: mongo:7.0
+    container_name: panorama-mongodb
+    restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_BIND_ADDRESS:-127.0.0.1}:27017:27017"
     volumes:
       - mongo_data:/data/db
+      - mongo_configdb:/data/configdb
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   # 2. PostgreSQL (Modelo Analítico)
   postgres:
     image: postgres:16-alpine
-    container_name: panorama_postgres
+    container_name: panorama-postgres
     restart: always
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: panorama_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   # 3. Redis (Cache)
   redis:
     image: redis:alpine
-    container_name: panorama_redis
+    container_name: panorama-redis
     restart: always
     ports:
       - "6379:6379"
 
-  # ---------------------------------------------------------
-  # SERVIÇOS DO AIRFLOW DIVIDIDOS
-  # ---------------------------------------------------------
-  
-  # 1. Serviço que inicializa o banco e força a criação do usuário
-  airflow-init:
-    <<: *airflow-common
-    container_name: panorama_airflow_init
-    command: version
+  # 4. Airflow Standalone (Sua ferramenta de orquestração)
+  airflow:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: panorama-airflow
+    restart: always
+    depends_on:
+      - postgres
     environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
-      _AIRFLOW_WWW_USER_ROLE: Admin
-      _AIRFLOW_WWW_USER_EMAIL: admin@panorama.com
-
-  # 2. Interface Web (A tela do localhost:8080)
-  airflow-webserver:
-    <<: *airflow-common
-    container_name: panorama_airflow_webserver
-    command: webserver
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _PIP_ADDITIONAL_REQUIREMENTS=pymongo requests pyyaml google-api-python-client pandas
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
     ports:
       - "8080:8080"
-    restart: always
-    depends_on:
-      postgres:
-        condition: service_started
-      airflow-init:
-        condition: service_completed_successfully
-
-  # 3. Orquestrador (Quem dispara as DAGs)
-  airflow-scheduler:
-    <<: *airflow-common
-    container_name: panorama_airflow_scheduler
-    command: scheduler
-    restart: always
-    depends_on:
-      postgres:
-        condition: service_started
-      airflow-init:
-        condition: service_completed_successfully
+    volumes:
+      - ./dags:/opt/airflow/dags         
+      - ./pipelines:/opt/airflow/pipelines  
+      - ./config:/opt/airflow/config 
+    command: standalone
 
 volumes:
   mongo_data:
+  mongo_configdb:
   postgres_data:

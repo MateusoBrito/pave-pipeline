@@ -1,3 +1,5 @@
 .env
-__pycache__/
-*.pyc
+
+backups/*
+!backups/.gitkeep
+__pycache__/*
