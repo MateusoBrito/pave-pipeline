@@ -25,7 +25,7 @@ with DAG(
     "collect_meta_dag",
     schedule_interval = "@daily",
     default_args = default_args,
-    catchup = True,
+    catchup = False,
     tags = ["meta", "collector"]
 ) as dag:
 
