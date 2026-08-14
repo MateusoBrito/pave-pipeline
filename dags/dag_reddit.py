@@ -9,10 +9,10 @@ file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.ya
 try:
     with open(file_path, "r") as file:
         entities_config = yaml.safe_load(file)
-        canais = entities_config.get("youtube", {}).get("canais", [])
+        subreddits = entities_config.get("reddit", {}).get("subreddits", [])
 except Exception as e:
     print(f"Erro ao carregar entidades: {e}")
-    canais = []
+    subreddits = []
 
 default_args = {
     "owner":        "airflow",
@@ -22,27 +22,25 @@ default_args = {
 }
 
 with DAG(
-    "collect_youtube_dag",
+    "collect_reddit_dag",
     schedule_interval = "@daily",
     default_args = default_args,
     catchup = True,
-    tags = ["youtube", "collector"]
+    tags = ["reddit", "collector"]
 ) as dag:
 
-    file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
+    file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "reddit_collector.py")
 
-    for canal in canais:
-        channel_id = canal.get("channel_id")
-        nome = canal.get("nome", "").replace(" ", "_").lower()
+    for subreddit in subreddits:
         
         comando = (
             f"python3 {file_script_path} "
-            f"--entidade {channel_id} "
+            f"--entidade {subreddit} "
             f"--data-inicio {{{{ data_interval_start | ds }}}} "
             f"--data-fim {{{{ data_interval_end | ds }}}}"
         )
 
-        task_collect_youtube = BashOperator(
-            task_id = f"collect_youtube_{nome}",
+        task_collect_reddit = BashOperator(
+            task_id = f"collect_reddit_{subreddit}",
             bash_command = comando
         )

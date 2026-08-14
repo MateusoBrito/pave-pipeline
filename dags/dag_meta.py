@@ -9,10 +9,10 @@ file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.ya
 try:
     with open(file_path, "r") as file:
         entities_config = yaml.safe_load(file)
-        canais = entities_config.get("youtube", {}).get("canais", [])
+        perfis = entities_config.get("meta", {}).get("perfis", [])
 except Exception as e:
     print(f"Erro ao carregar entidades: {e}")
-    canais = []
+    perfis = []
 
 default_args = {
     "owner":        "airflow",
@@ -22,27 +22,27 @@ default_args = {
 }
 
 with DAG(
-    "collect_youtube_dag",
+    "collect_meta_dag",
     schedule_interval = "@daily",
     default_args = default_args,
-    catchup = True,
-    tags = ["youtube", "collector"]
+    catchup = False,
+    tags = ["meta", "collector"]
 ) as dag:
 
-    file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
+    file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "meta_collector.py")
 
-    for canal in canais:
-        channel_id = canal.get("channel_id")
-        nome = canal.get("nome", "").replace(" ", "_").lower()
+    for perfil in perfis:
+        page_id = perfil.get("page_id")
+        nome = perfil.get("nome", "").replace(" ", "_").lower()
         
         comando = (
             f"python3 {file_script_path} "
-            f"--entidade {channel_id} "
+            f"--entidade {page_id} "
             f"--data-inicio {{{{ data_interval_start | ds }}}} "
             f"--data-fim {{{{ data_interval_end | ds }}}}"
         )
 
-        task_collect_youtube = BashOperator(
-            task_id = f"collect_youtube_{nome}",
+        task_collect_meta = BashOperator(
+            task_id = f"collect_meta_{nome}",
             bash_command = comando
         )
