@@ -45,16 +45,6 @@ MENSAGENS_ERRO_TRANSITORIO = {
     "Too many requests",
 }
 
-# SUBREDDITS = ["brasilivre", "brasil"]
-
-# DATA_INICIO_PADRAO = "2024-01-01"
-# DATA_FIM_PADRAO = "2024-12-31"
-
-# ENTIDADES = {
-#     "Lula": "Lula",
-#     "Flavio Bolsonaro": "Flavio Bolsonaro",
-# }
-
 def _gerar_janelas_mensais(data_inicio: str, data_fim: str) -> List[Dict[str, int]]:
     inicio = datetime.strptime(data_inicio, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     fim = datetime.strptime(data_fim, "%Y-%m-%d").replace(tzinfo=timezone.utc)

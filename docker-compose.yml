@@ -17,6 +17,7 @@ x-airflow-common:
     - ./dags:/opt/airflow/dags           
     - ./pipelines:/opt/airflow/pipelines  
     - ./config:/opt/airflow/config
+    - ./src:/opt/airflow/src
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
@@ -67,7 +68,10 @@ services:
 
   # 4. Airflow Standalone (Sua ferramenta de orquestração)
   airflow:
-    image: apache/airflow:2.8.1-python3.11
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pave-airflow:latest
     container_name: panorama-airflow
     restart: always
     depends_on:
@@ -77,7 +81,6 @@ services:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - _PIP_ADDITIONAL_REQUIREMENTS=pymongo requests pyyaml google-api-python-client pandas
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - MONGO_HOST=mongodb
@@ -89,7 +92,8 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags         
       - ./pipelines:/opt/airflow/pipelines  
-      - ./config:/opt/airflow/config 
+      - ./config:/opt/airflow/config
+      - ./src:/opt/airflow/src
     command: standalone
 
 volumes:

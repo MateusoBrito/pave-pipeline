@@ -28,25 +28,20 @@ if not MONGO_USER or not MONGO_PASSWORD:
 
 MONGO_URI = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/"
 
+ACCESS_TOKENS = [
+    "EAAObkoZCck74BSDBkyA5AeIheVuyTkT5yt1VnNTYu0EEkI1ybGhJeKdTNzZCV9uWBSR5YAagkOPaPZA0aCMzUiuI8GUJ9t4XrA8zLReJ70ZBMh4ZAvMLmtCIenyEPyfR3k2UWagODaZCbquttxQ075rZAv7Ts1jJf8o8EaULz1gmZAfcZAkZASJX06KR84cLfZBLZB9yUeyrKfrYOuioFBem"
+    "EAAOir8WJXxABSBcGqKWy2pCXTaSQY2IEWQshxwHK9G7eu9F5kZCfzt5zZBJ8Bqa6MLUEB8inH4p2uJkVZA93oYmFiDqwqpxCelKwWE2Xejr53EzxryMFjgZBbkVeXoHUZAYJsqrGjd7O9dzElSDzqZCiHphIUFL5hzMNP2IzDUhv6efdaVSVXcGKzwbH3mCOJ8duDR8Yb1xk56DymH11z03NRZAnftru4087su3uAZDZD"
+]
 
-#   export META_ACCESS_TOKEN="seu_token_aqui"    (Linux/Mac)
-#   setx META_ACCESS_TOKEN "seu_token_aqui"      (Windows)
-
-ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
+ACESS_TOKENS = [token.strip() for token in ACCESS_TOKENS if token.strip()]
 
 if not ACCESS_TOKEN:
-    raise SystemExit(
-        "Defina a variável de ambiente META_ACCESS_TOKEN antes de rodar o script."
-    )
+    raise SystemExit("Adicione um tokens de acesso ao ACESS_TOKENS.")
 
 GRAPH_VERSION = "v21.0"
 BASE_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
 ADS_URL = f"{BASE_URL}/ads_archive"
 
-# PERFIS = {
-#     "Lula": "267949976607343",
-#     "Flavio Bolsonaro": "156951837773645",
-# }
 
 FIELDS = ",".join([
     "page_name",

@@ -1,4 +1,5 @@
 reddit:
+  colecao: "reddit"
   subreddits:
     - "brasilivre"
     - "brasil"
@@ -8,11 +9,15 @@ reddit:
     - "selftext"
 
 meta:
+  colecao: "meta"
   perfis:
     - nome: "Lula"
       page_id: "267949976607343"
     - nome: "Flavio Bolsonaro"
       page_id: "156951837773645"
+
+  text_columns:
+    - "ad_creative_bodies"
 
 youtube:
   canais:
@@ -20,12 +25,12 @@ youtube:
       channel_id: "UCvO2BExvkAbGMsTGnEnI_Ng"
     - nome: "Flavio Bolsonaro"
       channel_id: "UCl2HptoHv6PjZMQAwTdA--Q"
-  
-  text_columns:
-    comentarios:
-      - "text"
 
-    videos:
-      - "title"
-      - "description"
-
+  colecoes:
+    - nome: "youtube_comments"
+      text_columns:
+        - "text"
+    - nome: "youtube_videos"
+      text_columns:
+        - "title"
+        - "description"
