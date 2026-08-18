@@ -2,9 +2,9 @@ import requests
 import time
 import os
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
-from pymongo import MongoClient, InsertOne
+from pymongo import MongoClient, UpdateOne
 from pymongo.errors import BulkWriteError, PyMongoError
 
 logging.basicConfig(
@@ -28,15 +28,16 @@ if not MONGO_USER or not MONGO_PASSWORD:
 
 MONGO_URI = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/"
 
-ACCESS_TOKENS = [
-    "EAAObkoZCck74BSDBkyA5AeIheVuyTkT5yt1VnNTYu0EEkI1ybGhJeKdTNzZCV9uWBSR5YAagkOPaPZA0aCMzUiuI8GUJ9t4XrA8zLReJ70ZBMh4ZAvMLmtCIenyEPyfR3k2UWagODaZCbquttxQ075rZAv7Ts1jJf8o8EaULz1gmZAfcZAkZASJX06KR84cLfZBLZB9yUeyrKfrYOuioFBem"
-    "EAAOir8WJXxABSBcGqKWy2pCXTaSQY2IEWQshxwHK9G7eu9F5kZCfzt5zZBJ8Bqa6MLUEB8inH4p2uJkVZA93oYmFiDqwqpxCelKwWE2Xejr53EzxryMFjgZBbkVeXoHUZAYJsqrGjd7O9dzElSDzqZCiHphIUFL5hzMNP2IzDUhv6efdaVSVXcGKzwbH3mCOJ8duDR8Yb1xk56DymH11z03NRZAnftru4087su3uAZDZD"
-]
+_tokens_raw = os.getenv("META_ACCESS_TOKEN", "")
+ACCESS_TOKENS = [token.strip() for token in _tokens_raw.split(",") if token.strip()]
 
-ACESS_TOKENS = [token.strip() for token in ACCESS_TOKENS if token.strip()]
+if not ACCESS_TOKENS:
+    raise SystemExit(
+        "Defina a variavel de ambiente META_ACCESS_TOKENS (um ou mais tokens "
+        "separados por virgula) antes de rodar o script."
+    )
 
-if not ACCESS_TOKEN:
-    raise SystemExit("Adicione um tokens de acesso ao ACESS_TOKENS.")
+RATE_LIMIT_ERROR_CODES = {4, 17, 32, 613}
 
 GRAPH_VERSION = "v21.0"
 BASE_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
@@ -54,54 +55,123 @@ FIELDS = ",".join([
     "impressions",
 ])
 
+class TokenManager:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.indice_atual = 0
 
-def coletar_dados(page_id, data_inicio, data_fim):
+    def token_atual(self):
+        return self.tokens[self.indice_atual]
+
+    def rotacionar(self):
+        self.indice_atual = (self.indice_atual + 1) % len(self.tokens)
+
+    def total_tokens(self):
+        return len(self.tokens)
+
+def erro_rate_limit(response):
+    erro = response.get("error", {})
+    codigo = erro.get("code")
+    return codigo in RATE_LIMIT_ERROR_CODES
+
+def requisicao_com_rotacao(url, params, token_manager, contexto):
+    tentativas = token_manager.total_tokens()
+ 
+    for tentativa in range(tentativas):
+        token_atual = token_manager.token_atual()
+        params_com_token = dict(params)
+        params_com_token["access_token"] = token_atual
+ 
+        try:
+            response = requests.get(url, params=params_com_token, timeout=30)
+        except requests.RequestException as erro_rede:
+            logger.error(f"[{contexto}] Falha de rede: {erro_rede}. Tentando novamente em 5s...")
+            time.sleep(5)
+            continue
+ 
+        try:
+            data = response.json()
+        except ValueError:
+            logger.error(
+                f"[{contexto}] Resposta sem corpo JSON válido (status {response.status_code}): "
+                f"{response.text[:300]}"
+            )
+            time.sleep(2)
+            continue
+ 
+        if response.status_code == 200 and "error" not in data:
+            return data
+ 
+        if erro_rate_limit(data):
+            logger.warning(
+                f"[{contexto}] Rate limit atingido no token #{token_manager.indice_atual + 1}"
+                f"/{tentativas}. Rotacionando token e repetindo a MESMA página."
+            )
+            token_manager.rotacionar()
+            time.sleep(2)
+            continue
+ 
+        # Erro que não é de rate limit: não adianta trocar de token.
+        logger.error(f"[{contexto}] Erro da API (não é rate limit): {data.get('error')}")
+        return None
+ 
+    logger.error(
+        f"[{contexto}] Todos os {tentativas} tokens atingiram o rate limit para esta página. "
+        f"Desistindo desta requisição."
+    )
+    return None
+
+
+def coletar_dados(page_id, data_inicio, data_fim, token_manager):
     params = {
-        "access_token": ACCESS_TOKEN,
         "search_page_ids": f'["{page_id}"]',
         "ad_type": "POLITICAL_AND_ISSUE_ADS",
         "ad_reached_countries": '["BR"]',
+        "ad_active_status": "ALL",
+        "ad_delivery_date_min": data_inicio,
+        "ad_delivery_date_max": data_fim,
         "fields": FIELDS,
         "limit": 100,
     }
 
     dados_totais = []
-    next_url = ADS_URL
-    first = True
+    after_cursor = None
+    pagina_num = 1
 
-    while next_url:
-        if first:
-            response = requests.get(next_url, params=params, timeout=30)
-            first = False
-        else:
-            response = requests.get(next_url, timeout=30)
+    while True:
+        params = dict(params)
+        if after_cursor:
+            params["after"] = after_cursor
 
-        if response.status_code != 200:
-            logger.error(f"Erro {response.status_code} para page_id={page_id}: {response.text}")
-            break
+        contexto = f"page_id={page_id}, pagina={pagina_num}"
+        data = requisicao_com_rotacao(ADS_URL, params, token_manager, contexto)
 
-        data = response.json()
-
-        if "error" in data:
-            logger.error(f"Erro da API para page_id={page_id}: {data['error']}")
+        if data is None:
+            # não conseguiu com nenhum token
+            logger.error(f"[{contexto}] Falha na requisição. Encerrando coleta para a página {page_id}.")
             break
 
         pagina = data.get("data", [])
-        
+
         for ad in pagina:
-            ad_start = ad.get("ad_delivery_start_time")
-            if not ad_start:
-                dados_totais.append(ad)
-                continue
-            
-            # Formato do ad_delivery_start_time costuma ser YYYY-MM-DD
-            if data_inicio <= ad_start[:10] <= data_fim:
-                ad["_entidade_busca"] = page_id
-                dados_totais.append(ad)
+            ad["_entidade_busca"] = page_id
+            dados_totais.append(ad)
 
-        logger.info(f"[{page_id}] +{len(pagina)} anúncios processados (total filtrado: {len(dados_totais)})")
+        logger.info(
+            f"[{contexto}] +{len(pagina)} anúncios processados "
+            f"(total filtrado: {len(dados_totais)})"
+        )
 
-        next_url = data.get("paging", {}).get("next")
+        paging = data.get("paging", {})
+        if "next" not in paging:
+            break
+
+        after_cursor = paging.get("cursors", {}).get("after")
+        if not after_cursor:
+            logger.warning(f"[{contexto}] 'next' presente, mas sem cursor 'after'. Encerrando coleta.")
+            break
+
+        pagina_num += 1
         time.sleep(1)  # respeita rate limit
 
     return dados_totais
@@ -121,17 +191,15 @@ def salvar_mongodb(dados, entidade):
         # Meta usa id para os anúncios
         colecao.create_index("id", unique=True, background=True)
 
-        operacoes = [InsertOne(doc) for doc in dados]
+        operacoes = [UpdateOne({"id": doc["id"]}, {"$set": doc}, upsert=True) for doc in dados]
 
         try:
             resultado = colecao.bulk_write(operacoes, ordered=False)
-            logger.info(f"[{entidade}] Inseridos: {resultado.inserted_count} novos documentos.")
+            inseridos = resultado.upserted_count
+            atualizados = resultado.modified_count
+            logger.info(f"[{entidade}] Inseridos: {inseridos} novos | Atualizados: {atualizados} existentes.")
         except BulkWriteError as bwe:
-            inseridos = bwe.details.get("nInserted", 0)
-            duplicados = sum(
-                1 for e in bwe.details.get("writeErrors", []) if e.get("code") == 11000
-            )
-            logger.warning(f"[{entidade}] Insercao parcial: {inseridos} inseridos, {duplicados} ja existiam.")
+            logger.warning(f"[{entidade}] Erro parcial no BulkWrite: {bwe.details}")
 
     except PyMongoError as erro:
         logger.error(f"[{entidade}] Erro ao conectar/inserir no MongoDB: {erro}")
@@ -141,15 +209,38 @@ def salvar_mongodb(dados, entidade):
             cliente.close()
 
 
+def _formatar_data(d):
+    return d.strftime("%Y-%m-%d")
+
+
 def main():
+    ontem = _formatar_data(datetime.utcnow().date() - timedelta(days=1))
+
     parser = argparse.ArgumentParser(description="Coletor do Meta")
     parser.add_argument("--entidade", type=str, required=True, help="Page ID (ex: 267949976607343)")
-    parser.add_argument("--data-inicio", type=str, required=True, help="Data de início (YYYY-MM-DD)")
-    parser.add_argument("--data-fim", type=str, required=True, help="Data de fim (YYYY-MM-DD)")
+    parser.add_argument(
+        "--data-inicio", type=str, default=ontem,
+        help=f"Data de início da veiculação (YYYY-MM-DD). Default: D-1 ({ontem}), para uso em coleta diária via Airflow.",
+    )
+    parser.add_argument(
+        "--data-fim", type=str, default=ontem,
+        help=f"Data de fim da veiculação (YYYY-MM-DD). Default: D-1 ({ontem}).",
+    )
     args = parser.parse_args()
 
-    logger.info(f"=== Coletando anúncios para page_id={args.entidade} ===")
-    dados = coletar_dados(page_id=args.entidade, data_inicio=args.data_inicio, data_fim=args.data_fim)
+    for data in (args.data_inicio, args.data_fim):
+        try:
+            datetime.strptime(data, "%Y-%m-%d")
+        except ValueError:
+            raise SystemExit(f"Data invalida: '{data}'. Use o formato YYYY-MM-DD.")
+
+    token_manager = TokenManager(ACCESS_TOKENS)
+
+    logger.info(
+        f"=== Coletando anúncios para page_id={args.entidade} "
+        f"(janela: {args.data_inicio} a {args.data_fim}) ==="
+    )
+    dados = coletar_dados(page_id=args.entidade, data_inicio=args.data_inicio, data_fim=args.data_fim, token_manager=token_manager)
     salvar_mongodb(dados, entidade=args.entidade)
 
 
