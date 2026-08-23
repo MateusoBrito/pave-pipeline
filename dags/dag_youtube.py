@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.models.param import Param
+
 
 file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
 try:
@@ -18,7 +20,7 @@ default_args = {
     "owner":        "airflow",
     "retries":      3,
     "retry_delay":  timedelta(minutes=5),
-    "start_date":   datetime(2026, 8, 1),
+    "start_date":   datetime(2026, 1, 1),
 }
 
 with DAG(
@@ -26,7 +28,11 @@ with DAG(
     schedule_interval = "@daily",
     default_args = default_args,
     catchup = True,
-    tags = ["youtube", "collector"]
+    tags = ["youtube", "collector"],
+    params = {
+        "data_inicio": Param("2026-01-01", type="string", title="Data Início (YYYY-MM-DD)"),
+        "data_fim": Param(datetime.today().strftime("%Y-%m-%d"), type="string", title="Data Fim (YYYY-MM-DD)"),
+    },
 ) as dag:
 
     file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
@@ -38,8 +44,8 @@ with DAG(
         comando = (
             f"python3 {file_script_path} "
             f"--entidade {channel_id} "
-            f"--data-inicio {{{{ data_interval_start | ds }}}} "
-            f"--data-fim {{{{ data_interval_end | ds }}}}"
+            f"--data-inicio {{{{ params.data_inicio }}}} "
+            f"--data-fim {{{{ params.data_fim }}}}"
         )
 
         task_collect_youtube = BashOperator(
