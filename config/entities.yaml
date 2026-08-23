@@ -4,6 +4,10 @@ reddit:
     - "brasilivre"
     - "brasil"
 
+  termo_busca:
+    - "Lula"
+    - "Bolsonaro"
+
   text_columns:
     - "title"
     - "selftext"
@@ -15,6 +19,28 @@ meta:
       page_id: "267949976607343"
     - nome: "Flavio Bolsonaro"
       page_id: "156951837773645"
+    - nome: "Clariana Barão"
+      page_id: "432531619936203"
+    - nome: "Augusto Cury"
+      page_id: "556120117792989"
+    - nome: "Hertz Dias"
+      page_id: "1228973623631615"
+    - nome: "Pablo Marçal"
+      page_id: "102199795319206"
+    - nome: "Ronaldo Caiado"
+      page_id: "398434416879875"
+    - nome: "Edmilson Costa"
+      page_id: "647246185147100"
+    - nome: "Rui Costa Pimenta"
+      page_id: "559712764045784"
+    - nome: "Wilson Grassi"
+      page_id: "146779238728977"
+    - nome: "Zema"
+      page_id: "655132991340181"
+    - nome: "Samara"
+      page_id: "107575367745594"
+    - nome: "Renan Santos"
+      page_id: "107908645628270"
 
   text_columns:
     - "ad_creative_bodies"
@@ -25,6 +51,16 @@ youtube:
       channel_id: "UCvO2BExvkAbGMsTGnEnI_Ng"
     - nome: "Flavio Bolsonaro"
       channel_id: "UCl2HptoHv6PjZMQAwTdA--Q"
+    - nome: "Clariana Barão"
+      channel_id: "UCojV7FRKeZvnITU_dTixqUQ"
+    - nome: "Augusto Cury"
+      channel_id: "UC3F2e1Lob9X8awYULlURyJg"
+    - nome: "Hertz Dias"
+      channel_id: "UCWBk05FplU93JomQ345w24Q"
+    - nome: "Pablo Marçal"
+      channel_id: "UCbroBIg8zvIH8-F4631wJhA"
+    - nome: "Ronaldo Caiado"
+      channel_id: "UCAz1jGIUrdpGoC8GvRTqrTA"
 
   colecoes:
     - nome: "youtube_comments"

@@ -18,14 +18,15 @@ default_args = {
     "owner":        "airflow",
     "retries":      3,
     "retry_delay":  timedelta(minutes=5),
-    "start_date":   datetime(2026, 8, 1),
+    "start_date":   datetime(2026, 1, 1),
 }
 
 with DAG(
-    "collect_meta_dag",
+    "collect_meta_ads_dag",
     schedule_interval = "@daily",
     default_args = default_args,
-    catchup = False,
+    catchup = True,
+    max_active_runs = 1,
     tags = ["meta", "collector"]
 ) as dag:
 
@@ -39,7 +40,7 @@ with DAG(
             f"python3 {file_script_path} "
             f"--entidade {page_id} "
             f"--data-inicio {{{{ data_interval_start | ds }}}} "
-            f"--data-fim {{{{ data_interval_end | ds }}}}"
+            f"--data-fim {{{{ data_interval_start | ds }}}}"
         )
 
         task_collect_meta = BashOperator(

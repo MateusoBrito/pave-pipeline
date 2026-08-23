@@ -4,14 +4,13 @@ import re
 import string
 import os
 import nltk
-from nltk.corpus import stopwords, wordnet
-from nltk.stem import WordNetLemmatizer
-from nltk import pos_tag
+from nltk.corpus import stopwords
+from nltk.stem import RSLPStemmer
 
 class TextPreprocessor:
     def __init__(self, min_word_len=3, max_repetition=2, custom_stopwords_path=None):
         """
-        Inicializa o pré-processador.
+        Inicializa o pré-processador para textos em PORTUGUÊS.
         Args:
             min_word_len (int): Tamanho mínimo da palavra a ser mantida.
             max_repetition (int): Número máximo de caracteres repetidos permitidos (ex: 2 transforma 'oiii' em 'oii').
@@ -19,11 +18,11 @@ class TextPreprocessor:
         """
         self.min_word_len = min_word_len
         self.max_repetition = max(1, max_repetition) # Garante que seja pelo menos 1
-        self.lemmatizer = WordNetLemmatizer()
-        
         # Garante recursos e carrega stopwords iniciais
         self._download_nltk_resources()
-        self.stop_words = set(stopwords.words('english'))
+        
+        self.stemmer = RSLPStemmer()
+        self.stop_words = set(stopwords.words('portuguese'))
         
         # Carrega stopwords extras se o caminho foi passado
         if custom_stopwords_path:
@@ -33,24 +32,17 @@ class TextPreprocessor:
         """Método interno para garantir downloads."""
         resources = [
             'stopwords', 
-            'wordnet', 
-            'averaged_perceptron_tagger',
-            'averaged_perceptron_tagger_eng',  
-            'omw-1.4', 
-            'punkt'
+            'rslp',
         ]
         
         for resource in resources:
             try:
-                nltk.data.find(f'corpora/{resource}')
+                nltk.data.find(f'stemmers/{resource}')
             except LookupError:
                 try:
-                    nltk.data.find(f'tokenizers/{resource}')
+                    nltk.data.find(f'corpora/{resource}')
                 except LookupError:
-                    try:
-                        nltk.data.find(f'taggers/{resource}')
-                    except LookupError:
-                        nltk.download(resource, quiet=True)
+                    nltk.download(resource, quiet=True)
 
     def _load_custom_stopwords(self, filepath):
         """Carrega stopwords adicionais e atualiza o set da instância."""
@@ -107,16 +99,9 @@ class TextPreprocessor:
         """Remove palavras com menos de min_word_len caracteres."""
         return [word for word in tokens if len(word) >= self.min_word_len]
 
-    def _get_wordnet_pos(self, tag):
-        if tag.startswith('J'): return wordnet.ADJ
-        elif tag.startswith('V'): return wordnet.VERB
-        elif tag.startswith('N'): return wordnet.NOUN
-        elif tag.startswith('R'): return wordnet.ADV
-        else: return wordnet.NOUN
-
-    def _lemmatize_tokens(self, tokens):
-        pos_tags = pos_tag(tokens)
-        return [self.lemmatizer.lemmatize(w, self._get_wordnet_pos(t)) for w, t in pos_tags]
+    def _stem_tokens(self, tokens):
+        """Aplica stemming em português (RSLP) nos tokens."""
+        return [self.stemmer.stem(word) for word in tokens]
 
     # --- Orquestrador ---
 
@@ -135,9 +120,9 @@ class TextPreprocessor:
         # 2. Tokenização
         tokens = text.split()
         
-        # 3. Filtragem e Lematização (Operações em lista)
+        # 3. Filtragem e Stemming (Operações em lista)
         tokens = self._remove_stopwords(tokens)
         tokens = self._remove_small_words(tokens) 
-        tokens = self._lemmatize_tokens(tokens)
+        tokens = self._stem_tokens(tokens)
         
         return ' '.join(tokens)

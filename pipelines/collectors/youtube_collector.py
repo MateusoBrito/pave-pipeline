@@ -14,8 +14,8 @@ MONGO_PASSWORD = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
 MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 MONGO_DATABASE = os.getenv("POSTGRES_DB", "panorama")
-MONGO_COLLECTION_VIDEOS = "youtube_videos"
-MONGO_COLLECTION_COMMENTS = "youtube_comments"
+MONGO_COLLECTION_VIDEOS = "youtube_videos_teste"
+MONGO_COLLECTION_COMMENTS = "youtube_comments_teste"
 
 if not MONGO_USER or not MONGO_PASSWORD:
     MONGO_URI = os.getenv("MONGO_URI", f"mongodb://{MONGO_HOST}:{MONGO_PORT}/")
