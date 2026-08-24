@@ -10,8 +10,8 @@ x-airflow-common:
     &airflow-common-env
     AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW__WEBSERVER__SECRET_KEY}"
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/panorama_db
-    AIRFLOW__CORE__FERNET_KEY: wX9p1q6Z8V_uR2m4N_7T3y5k9G_0C8b2H5v1A_5s9K8=
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${AIRFLOW_DB:-airflow_db}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
   volumes:
     - ./dags:/opt/airflow/dags           
@@ -22,6 +22,9 @@ x-airflow-common:
   depends_on:
     postgres:
       condition: service_started
+  networks:
+    - pave_network  
+  
 
 services:
   mongodb:
@@ -43,6 +46,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
+    networks:
+    - pave_network
 
   # 2. PostgreSQL (Modelo Analítico)
   postgres:
@@ -57,6 +62,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    networks:
+    - pave_network
 
   # 3. Redis (Cache)
   redis:
@@ -65,6 +73,8 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    networks:
+    - pave_network
 
   # 4. Airflow Standalone (Sua ferramenta de orquestração)
   airflow:
@@ -78,9 +88,10 @@ services:
       - postgres
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${AIRFLOW_DB:-airflow_db}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT=300
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - MONGO_HOST=mongodb
@@ -95,8 +106,14 @@ services:
       - ./config:/opt/airflow/config
       - ./src:/opt/airflow/src
     command: standalone
+    networks:
+    - pave_network
 
 volumes:
   mongo_data:
   mongo_configdb:
   postgres_data:
+
+networks:
+  pave_network:
+    external: true

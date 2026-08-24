@@ -1,14 +1,17 @@
 import argparse
+import re
 import sys
 import logging
 import os
 from pathlib import Path
 from datetime import datetime, timezone
+import nltk
 import pandas as pd
+from nltk.corpus import stopwords as nltk_stopwords
 from pymongo import MongoClient
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-from src.preprocessing import TextPreprocessor
+from src.pre_processing import PreProcessing
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +19,52 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+
+def remove_repetion_caracteres(text, max_repetition=2):
+    """Colapsa repetições de caracteres, ex: 'gooool' -> 'gool'."""
+    pattern = r'(.)\1{' + str(max_repetition) + r',}'
+    replacement = r'\1' * max_repetition
+    return re.sub(pattern, replacement, text)
+
+
+def load_stopwords(pp, stopwords_file=None):
+    try:
+        nltk.data.find('corpora/stopwords')
+    except LookupError:
+        nltk.download('stopwords', quiet=True)
+
+    pt_stopwords = set(nltk_stopwords.words('portuguese'))
+    extra_stopwords = list(pt_stopwords - set(pp.stopwords))
+
+    if stopwords_file:
+        if os.path.exists(stopwords_file):
+            with open(stopwords_file, 'r', encoding='utf-8') as f:
+                extra_stopwords += [line.strip() for line in f if line.strip()]
+        else:
+            logger.warning(f"Arquivo de stopwords '{stopwords_file}' não encontrado. Ignorando.")
+
+    pp.append_stopwords_list(extra_stopwords)
+
+
+def preprocess_text(text, pp):
+    if pd.isna(text) or not str(text).strip():
+        return ""
+
+    doc = pp.nlp(str(text).lower())
+    text = ' '.join(token.lemma_.strip() for token in doc if token.lemma_.strip())
+    text = pp.remove_stopwords(text)
+    text = pp.lowercase_unidecode(text)
+    text = pp.remove_stopwords(text)
+    text = pp.remove_tweet_marking(text)
+    text = remove_repetion_caracteres(text)
+    text = pp.remove_urls(text)
+    text = pp.remove_punctuation(text)
+    text = pp.remove_numbers(text)
+    text = pp.remove_n(text, n=3)
+
+    return text
+
 
 def main():
     parser = argparse.ArgumentParser(description="Pré-processa colunas de texto de uma coleção do MongoDB e salva o resultado na mesma coleção")
@@ -52,6 +101,17 @@ def main():
         default=["title", "description"],
         help="Lista de colunas/campos de texto para concatenar e pré-processar"
     )
+    parser.add_argument(
+        "--stopwords-file", "-sw",
+        type=str,
+        default=None,
+        help="Caminho para arquivo txt com stopwords adicionais (uma por linha)"
+    )
+    parser.add_argument(
+        "--reprocess-all",
+        action="store_true",
+        help="Reprocessa também documentos que já têm 'processed_text' (uso pontual após mudar o pré-processamento)"
+    )
 
     args = parser.parse_args()
 
@@ -83,11 +143,14 @@ def main():
     db = client[args.db_name]
     collection = db[args.collection]
 
-    # Buscar apenas documentos que ainda NÃO foram pré-processados
-    filtro = {"processed_text": {"$exists": False}}
+    # Buscar documentos: por padrão só os ainda NÃO pré-processados, ou todos se --reprocess-all
+    filtro = {} if args.reprocess_all else {"processed_text": {"$exists": False}}
     projection = {col: 1 for col in args.columns}
 
-    logger.info(f"Buscando documentos não processados da coleção '{args.collection}'...")
+    if args.reprocess_all:
+        logger.info(f"[--reprocess-all] Buscando TODOS os documentos da coleção '{args.collection}'...")
+    else:
+        logger.info(f"Buscando documentos não processados da coleção '{args.collection}'...")
     documents = list(collection.find(filtro, projection))
 
     if not documents:
@@ -107,9 +170,10 @@ def main():
     df["merged_text"] = df[args.columns].agg(" ".join, axis=1)
 
     # Pré-processar
-    logger.info("Aplicando limpeza de texto (TextPreprocessor)...")
-    preprocessor = TextPreprocessor()
-    df["processed_text"] = df["merged_text"].apply(preprocessor.preprocess)
+    logger.info("Aplicando limpeza de texto (PreProcessing)...")
+    pp = PreProcessing(language="pt")
+    load_stopwords(pp, args.stopwords_file)
+    df["processed_text"] = df["merged_text"].apply(lambda text: preprocess_text(text, pp))
 
     # Salvar de volta na MESMA coleção (update in-place)
     logger.info(f"Salvando campo 'processed_text' de volta na coleção '{args.collection}'...")

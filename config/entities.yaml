@@ -11,6 +11,7 @@ reddit:
   text_columns:
     - "title"
     - "selftext"
+    - "body"
 
 meta:
   colecao: "meta"
