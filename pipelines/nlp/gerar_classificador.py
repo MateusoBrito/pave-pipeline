@@ -77,7 +77,7 @@ train_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "
 # 4. TREINAMENTO
 model = AutoModelForSequenceClassification.from_pretrained(nome_modelo, num_labels=3).to(device)
 
-# Os seus melhores hiperparâmetros
+# Melhores hiperparâmetros via Optuna
 training_args = TrainingArguments(
     output_dir="./temp_results",
     learning_rate=1.827226177606625e-05,
@@ -101,7 +101,7 @@ trainer = WeightedTrainer(
 print("\nTreinando o modelo...")
 trainer.train()
 
-# 5. SALVANDO O MODELO NO DISCO
+# 5. SALVANDO O MODELO
 pasta_destino = "./meu_bertimbau"
 
 print(f"\nSalvando o modelo treinado e o tokenizador na pasta: {pasta_destino}")
