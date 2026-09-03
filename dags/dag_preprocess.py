@@ -57,8 +57,17 @@ with DAG(
         os.path.dirname(__file__), "..", "pipelines", "nlp", "preprocess.py"
     )
 
+    file_nlp_path = os.path.join(
+        os.path.dirname(__file__), "..", "pipelines", "nlp", "classificar_sentimentos.py"
+    )
+
+    task_classificacao_nlp = BashOperator(
+        task_id="classificar_sentimentos_bertimbau",
+        bash_command=f"python3 {file_nlp_path} --data-inicio {{{{ ds }}}}"
+    )
+
     for tarefa in tarefas:
-        BashOperator(
+        task_preprocess = BashOperator(
             task_id=f"preprocess_{tarefa['rede']}_{tarefa['collection']}",
             bash_command=(
                 f"python3 {script_path} "
@@ -67,3 +76,5 @@ with DAG(
                 f"--rede-social {tarefa['rede']}"
             ),
         )
+
+        task_preprocess >> task_classificacao_nlp
