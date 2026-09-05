@@ -1,7 +1,13 @@
 .env
 venv/
+data/
+logs/
 
 backups/*
 !backups/.gitkeep
 __pycache__/
 *.pyc
+
+meu_bertimbau/
+*.bin
+*.safetensors
