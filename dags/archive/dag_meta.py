@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.empty import EmptyOperator
+
+from common.datasets import RAW_META  # ajuste o import conforme o PYTHONPATH do seu projeto
 
 file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
 try:
@@ -27,23 +30,30 @@ with DAG(
     default_args = default_args,
     catchup = True,
     max_active_runs = 1,
-    tags = ["meta", "collector"]
+    tags = ["meta", "collector"],
+    is_paused_upon_creation=True,
 ) as dag:
 
     file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "meta_collector.py")
 
-    for perfil in perfis:
-        page_id = perfil.get("page_id")
-        nome = perfil.get("nome", "").replace(" ", "_").lower()
-        
-        comando = (
-            f"python3 {file_script_path} "
-            f"--entidade {page_id} "
-            f"--data-inicio {{{{ data_interval_start | ds }}}} "
-            f"--data-fim {{{{ data_interval_start | ds }}}}"
-        )
+    perfis_params = [
+        {
+            "page_id": perfil.get("page_id"),
+            "nome": perfil.get("nome", "").replace(" ", "_").lower(),
+        }
+        for perfil in perfis
+    ]
 
-        task_collect_meta = BashOperator(
-            task_id = f"collect_meta_{nome}",
-            bash_command = comando
-        )
+    collect_meta = BashOperator.partial(
+        task_id="collect_meta",
+        bash_command=(
+            f"python3 {file_script_path} "
+            "--entidade {{ params.page_id }} "
+            "--data-inicio {{ data_interval_start | ds }} "
+            "--data-fim {{ data_interval_start | ds }}"  
+        ),
+    ).expand(params=perfis_params)
+
+    meta_collected = EmptyOperator(task_id="meta_collected", outlets=[RAW_META])
+
+    collect_meta >> meta_collected

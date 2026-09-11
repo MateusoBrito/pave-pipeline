@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.empty import EmptyOperator
+from common.datasets import RAW_YOUTUBE
 
 file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
 try:
@@ -26,23 +28,26 @@ with DAG(
     schedule_interval = "@daily",
     default_args = default_args,
     catchup = True,
-    tags = ["youtube", "collector"]
+    tags = ["youtube", "collector"],
+    is_paused_upon_creation=True,
 ) as dag:
 
     file_script_path = os.path.join(os.path.dirname(__file__), "..", "pipelines", "collectors", "youtube_collector.py")
 
-    for canal in canais:
-        channel_id = canal.get("channel_id")
-        nome = canal.get("nome", "").replace(" ", "_").lower()
-        
-        comando = (
-            f"python3 {file_script_path} "
-            f"--entidade {channel_id} "
-            f"--data-inicio {{{{ data_interval_start | ds }}}} "
-            f"--data-fim {{{{ data_interval_end | ds }}}}"
-        )
+    canais_params = [
+        {"channel_id": c.get("channel_id"), "nome": c.get("nome", "").replace(" ", "_").lower()}
+        for c in canais
+    ]
 
-        task_collect_youtube = BashOperator(
-            task_id = f"collect_youtube_{nome}",
-            bash_command = comando
-        )
+    collect_youtube = BashOperator.partial(
+        task_id="collect_youtube",
+        bash_command=(
+            f"python3 {file_script_path} "
+            "--entidade {{ params.channel_id }} "
+            "--data-inicio {{ data_interval_start | ds }} "
+            "--data-fim {{ data_interval_end | ds }}"
+        ),
+    ).expand(params=canais_params)
+
+    youtube_collected = EmptyOperator(task_id="youtube_collected", outlets=[RAW_YOUTUBE])
+    collect_youtube >> youtube_collected

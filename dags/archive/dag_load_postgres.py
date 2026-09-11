@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.empty import EmptyOperator
+from common.datasets import PREPROCESSED, POSTGRES_LOAD
 
 default_args = {
     "owner": "airflow",
@@ -14,11 +16,12 @@ with DAG(
     dag_id="load_postgres_dag",
     default_args=default_args,
     description="Carrega documento/documento_entidade (Mongo -> Postgres) a partir dos dados brutos coletados",
-    schedule_interval="0 4 * * *",  # 4h -- depois da coleta (@daily, ~meia-noite) e perto do pré-processamento (3h)
-    start_date=datetime(2026, 8, 20),
+    schedule =[PREPROCESSED],
+    start_date=datetime(2026, 8, 1),
     catchup=False,
     max_active_runs=1,
     tags=["postgres", "etl"],
+    is_paused_upon_creation=True,
 ) as dag:
 
     seed_script = os.path.join(os.path.dirname(__file__), "..", "pipelines", "etl", "seed_entidades.py")
@@ -45,3 +48,5 @@ with DAG(
     )
 
     seed_entidades >> [load_youtube, load_reddit, load_meta]
+    postgres_loaded = EmptyOperator(task_id="postgres_loaded", outlets=[POSTGRES_LOAD])
+    [load_youtube, load_reddit, load_meta] >> postgres_loaded

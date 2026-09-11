@@ -1,14 +1,16 @@
 from datetime import datetime, timedelta
 import yaml
 import os
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.empty import EmptyOperator 
+from common.datasets import RAW_YOUTUBE, RAW_REDDIT, RAW_META, PREPROCESSED
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     entities_config = yaml.safe_load(f)
-
 
 tarefas = []
 
@@ -47,18 +49,20 @@ with DAG(
     dag_id="nlp_preprocessing_dag",
     default_args=default_args,
     description="Pré-processamento de texto das coleções do MongoDB",
-    schedule_interval="0 3 * * *",
+    schedule=[RAW_YOUTUBE, RAW_REDDIT, RAW_META],
     start_date=datetime(2026, 8, 1),
     catchup=False,
     tags=["nlp", "preprocessing"],
+    is_paused_upon_creation=True,
 ) as dag:
 
     script_path = os.path.join(
         os.path.dirname(__file__), "..", "pipelines", "nlp", "preprocess.py"
     )
 
+    tasks_ops = []
     for tarefa in tarefas:
-        BashOperator(
+        op = BashOperator(
             task_id=f"preprocess_{tarefa['rede']}_{tarefa['collection']}",
             bash_command=(
                 f"python3 {script_path} "
@@ -67,3 +71,10 @@ with DAG(
                 f"--rede-social {tarefa['rede']}"
             ),
         )
+        tasks_ops.append(op)
+
+    preprocessing_done = EmptyOperator(
+        task_id="preprocessing_done",
+        outlets=[PREPROCESSED]
+    )
+    tasks_ops >> preprocessing_done

@@ -1,0 +1,64 @@
+dag:
+  dag_id: pipeline_diario_dag
+  schedule_interval: "0 */2 * * *"
+
+  # Data de início do backfill. Formato: "YYYY-MM-DD"
+  # 2026-08-01 (decisão explícita de 2026-09-07): agora com só 4 candidatos e o
+  # skip-logic de fatias históricas (_SKIP_STALE_HISTORICAL_SLICE em dag_pipeline.py -
+  # só a fatia das 00h de um dia já fechado coleta de verdade), o backlog é pequeno o
+  # bastante pra valer a pena. NÃO reverter pra uma data mais antiga sem alinhar com
+  # quem mexeu nisso por último (ver histórico de edições deste arquivo).
+  start_date: "2026-08-01"
+  # Se true, o Airflow executa os intervalos passados que ainda não rodaram (backfill).
+  catchup: true
+  # Máximo de runs do DAG rodando ao mesmo tempo.
+  max_active_runs: 1
+  max_active_tasks: 4
+  
+# -----------------------------------------------------------------------------
+# Configurações padrão aplicadas a todas as tasks (pode ser sobrescrito por etapa)
+# -----------------------------------------------------------------------------
+default_task:
+  owner: airflow
+  retries: 3
+  retry_delay_minutes: 5
+  email_on_failure: false
+  email_on_retry: false
+  # Lista de e-mails para notificação (usado se email_on_failure = true)
+  email: []
+
+# -----------------------------------------------------------------------------
+# Etapa 1: Coleta (Meta, Reddit, YouTube)
+# -----------------------------------------------------------------------------
+coleta:
+  retries: 3
+  retry_delay_minutes: 5
+
+  # Pool compartilhado pelas tasks de coleta.
+  # Crie/ajuste com: airflow pools set coleta_pool 4 "coletas simultaneas"
+  pool: coleta_pool
+  pool_slots: 4
+
+  # Se true:  uma falha em qualquer task de coleta PARA o pré-processamento e o load.
+  #           (usa TriggerRule.ALL_SUCCESS na barreira all_collected)
+  # Se false: o pipeline CONTINUA mesmo com falhas parciais na coleta.
+  #           (usa TriggerRule.ALL_DONE — comportamento padrão atual)
+  falha_bloqueia_pipeline: false
+
+# -----------------------------------------------------------------------------
+# Etapa 2: Pré-processamento (NLP)
+# -----------------------------------------------------------------------------
+preprocess:
+  retries: 2
+  retry_delay_minutes: 5
+
+  # Se true:  uma falha em qualquer task de preprocess PARA a carga no Postgres.
+  # Se false: a carga roda mesmo que algum preprocess falhe.
+  falha_bloqueia_pipeline: false
+
+# -----------------------------------------------------------------------------
+# Etapa 3: Carga no Postgres
+# -----------------------------------------------------------------------------
+load_postgres:
+  retries: 2
+  retry_delay_minutes: 5

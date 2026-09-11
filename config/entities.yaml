@@ -4,9 +4,13 @@ reddit:
     - "brasilivre"
     - "brasil"
 
+  # Reduzido a 4 candidatos (decisão de 2026-09-07) - o resto fica de fora da coleta
+  # por enquanto, não removido do sistema (só não entra mais em alvo_coleta novo).
   termo_busca:
     - "Lula"
-    - "Bolsonaro"
+    - "Flavio Bolsonaro"
+    - "Augusto Cury"
+    - "Renan Santos"
 
   text_columns:
     - "title"
@@ -20,26 +24,8 @@ meta:
       page_id: "267949976607343"
     - nome: "Flavio Bolsonaro"
       page_id: "156951837773645"
-    - nome: "Clariana Barão"
-      page_id: "432531619936203"
     - nome: "Augusto Cury"
       page_id: "556120117792989"
-    - nome: "Hertz Dias"
-      page_id: "1228973623631615"
-    - nome: "Pablo Marçal"
-      page_id: "102199795319206"
-    - nome: "Ronaldo Caiado"
-      page_id: "398434416879875"
-    - nome: "Edmilson Costa"
-      page_id: "647246185147100"
-    - nome: "Rui Costa Pimenta"
-      page_id: "559712764045784"
-    - nome: "Wilson Grassi"
-      page_id: "146779238728977"
-    - nome: "Zema"
-      page_id: "655132991340181"
-    - nome: "Samara"
-      page_id: "107575367745594"
     - nome: "Renan Santos"
       page_id: "107908645628270"
 
@@ -47,21 +33,39 @@ meta:
     - "ad_creative_bodies"
 
 youtube:
-  canais:
-    - nome: "Lula"
-      channel_id: "UCvO2BExvkAbGMsTGnEnI_Ng"
-    - nome: "Flavio Bolsonaro"
-      channel_id: "UCl2HptoHv6PjZMQAwTdA--Q"
-    - nome: "Clariana Barão"
-      channel_id: "UCojV7FRKeZvnITU_dTixqUQ"
-    - nome: "Augusto Cury"
-      channel_id: "UC3F2e1Lob9X8awYULlURyJg"
-    - nome: "Hertz Dias"
-      channel_id: "UCWBk05FplU93JomQ345w24Q"
-    - nome: "Pablo Marçal"
-      channel_id: "UCbroBIg8zvIH8-F4631wJhA"
-    - nome: "Ronaldo Caiado"
-      channel_id: "UCAz1jGIUrdpGoC8GvRTqrTA"
+  # Canais de notícia, não mais o canal oficial de cada candidato: comentário no
+  # próprio canal do candidato tinha pouquíssimo volume (poucos posts, engajamento
+  # baixo). Busca (canal de notícia x candidato) igual ao Reddit - ver termo_busca
+  # abaixo e youtube_collector.py.
+  canais_noticia:
+    - nome: "Jovem Pan News"
+      channel_id: "UCP391YRAjSOdM_bwievgaZA"
+    - nome: "SBT News"
+      channel_id: "UC376n347Ob5Lwzq2WGzF1AA"
+    - nome: "BBC News Brasil"
+      channel_id: "UCthbIFAxbXTTQEC7EcQvP1Q"
+    - nome: "Band Jornalismo"
+      channel_id: "UCoa-D_VfMkFrCYodrOC9-mA"
+    - nome: "CNN Brasil"
+      channel_id: "UCvdwhh_fDyWccR42-rReZLw"
+    - nome: "UOL"
+      channel_id: "UCVFbXI6Gu8U2f9Gjtxw4A-Q"
+    - nome: "Itatiaia"
+      channel_id: "UC9T0ZAarQHL4cJGFzORVsFg"
+    - nome: "Poder360"
+      channel_id: "UCFCiSRbCVwQ_BQaDQBYxN_A"
+    - nome: "O Povo"
+      channel_id: "UCbIF2QLp1NM5ZrxaylOL_oQ"
+    - nome: "Metrópoles"
+      channel_id: "UCi1FF6qMQh4xnxBYtN45Ncg"
+    - nome: "O Tempo"
+      channel_id: "UC73p5mW8WiD-k0P9iD5WBJA"
+
+  termo_busca:
+    - "Lula"
+    - "Flavio Bolsonaro"
+    - "Augusto Cury"
+    - "Renan Santos"
 
   colecoes:
     - nome: "youtube_comments"
