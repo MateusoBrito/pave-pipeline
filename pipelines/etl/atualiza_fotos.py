@@ -37,9 +37,14 @@ def atualizar_fotos(session):
         if filepath.is_file():
             filename = filepath.name          # 'lula.jpg'
             codigo = filepath.stem            # 'lula'
-            
-            # Monta o caminho final que vai pro banco: /fotos/lula.jpg
-            caminho_api = f"{PREFIXO_API}{filename}"
+
+            # ?v=<mtime> força o navegador a buscar de novo quando o arquivo é
+            # substituído (mesmo nome/URL) - sem isso, atualizar a foto de um
+            # candidato já visitado antes pode continuar mostrando a versão em cache.
+            versao = int(filepath.stat().st_mtime)
+
+            # Monta o caminho final que vai pro banco: /fotos/lula.jpg?v=169...
+            caminho_api = f"{PREFIXO_API}{filename}?v={versao}"
 
             logger.info("Atualizando %s -> %s", codigo, caminho_api)
 

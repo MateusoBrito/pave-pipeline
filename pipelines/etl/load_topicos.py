@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, Table, func
+from sqlalchemy import MetaData, Table, case, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
@@ -101,11 +101,24 @@ def parse_resumo_csv(path: Path) -> list:
     return rows
 
 
+def parse_rotulos_json(path: Path) -> dict:
+    """'rotulos_topicos.json' (see pave-tm/pipeline/llm_labeling.py) -> {numero_topico: rotulo}."""
+    if not path.exists():
+        return {}
+    return {int(numero): rotulo for numero, rotulo in json.loads(path.read_text(encoding="utf-8")).items()}
+
+
 def find_candidatos(resultado_dir: Path, collections: list) -> list:
-    """[(collection, candidate_slug, candidate_dir), ...] existentes em disco."""
+    """[(collection, candidate_slug, candidate_dir), ...] existentes em disco.
+
+    O diretorio em `resultado_dir` e nomeado pelo fonte_codigo (COLLECTION_TO_FONTE),
+    nao pelo nome nativo do Mongo em `collection` - para reddit/meta os dois coincidem
+    (mascarando isso ate agora), mas youtube_comments (Mongo) -> youtube (fonte_codigo e
+    o nome real do diretorio em resultado_final/).
+    """
     candidatos = []
     for collection in collections:
-        collection_dir = resultado_dir / collection
+        collection_dir = resultado_dir / COLLECTION_TO_FONTE[collection]
         if not collection_dir.is_dir():
             continue
         for candidate_dir in sorted(collection_dir.iterdir()):
@@ -115,7 +128,11 @@ def find_candidatos(resultado_dir: Path, collections: list) -> list:
 
 
 def find_combinacoes(candidate_dir: Path) -> list:
-    """[(k, embedding_slug, emb_dir, result_txt, resumo_csv), ...] completas para 1 candidato."""
+    """[(k, embedding_slug, emb_dir, result_txt, resumo_csv, rotulos_json), ...] completas para 1 candidato.
+
+    `rotulos_json` (rotulos_topicos.json, gerado por pave-tm/pipeline/llm_labeling.py) e opcional -
+    o Path e retornado mesmo quando o arquivo nao existe; parse_rotulos_json trata a ausencia.
+    """
     combos = []
     for k_dir in sorted(candidate_dir.glob("k*")):
         bt_dir = k_dir / "bertopic_kmeans"
@@ -124,8 +141,9 @@ def find_combinacoes(candidate_dir: Path) -> list:
         for emb_dir in sorted(bt_dir.iterdir()):
             result_txt = next(emb_dir.glob("result_topic_*.txt"), None)
             resumo_csv = emb_dir / "Resumo_Topicos_Dominantes.csv"
+            rotulos_json = emb_dir / "rotulos_topicos.json"
             if result_txt and result_txt.exists() and resumo_csv.exists():
-                combos.append((int(k_dir.name.lstrip("k")), emb_dir.name, emb_dir, result_txt, resumo_csv))
+                combos.append((int(k_dir.name.lstrip("k")), emb_dir.name, emb_dir, result_txt, resumo_csv, rotulos_json))
             else:
                 logger.warning("Combinacao incompleta (ignorada): %s", emb_dir)
     return combos
@@ -175,10 +193,16 @@ def upsert_modelo(session, fonte_codigo, entidade_codigo, embedding_key, embeddi
     return session.execute(stmt).scalar_one()
 
 
-def upsert_topicos(session, modelo_id: int, topics_palavras: dict, tamanhos: dict) -> dict:
-    """Retorna {numero_topico: topico_id}."""
+def upsert_topicos(session, modelo_id: int, topics_palavras: dict, tamanhos: dict, rotulos: dict) -> dict:
+    """Retorna {numero_topico: topico_id}.
+
+    `rotulos` (numero_topico -> rotulo, de rotulos_topicos.json) so sobrescreve topico.rotulo
+    quando o topico ainda nao foi `revisado` -- um rotulo confirmado/editado manualmente nao e
+    reprocessado por uma rodada posterior do gerador automatico.
+    """
     numero_para_id = {}
     for numero, palavras in topics_palavras.items():
+        rotulo = rotulos.get(numero)
         stmt = (
             pg_insert(Topico)
             .values(
@@ -186,13 +210,20 @@ def upsert_topicos(session, modelo_id: int, topics_palavras: dict, tamanhos: dic
                 numero=numero,
                 palavras_chave=palavras,
                 tamanho=tamanhos.get(numero, 0),
+                rotulo=rotulo,
             )
-            .on_conflict_do_update(
-                index_elements=[Topico.modelo_id, Topico.numero],
-                set_=dict(palavras_chave=palavras, tamanho=tamanhos.get(numero, 0)),
-            )
-            .returning(Topico.id)
         )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Topico.modelo_id, Topico.numero],
+            set_=dict(
+                palavras_chave=palavras,
+                tamanho=tamanhos.get(numero, 0),
+                rotulo=case(
+                    (Topico.revisado, Topico.rotulo),
+                    else_=func.coalesce(stmt.excluded.rotulo, Topico.rotulo),
+                ),
+            ),
+        ).returning(Topico.id)
         numero_para_id[numero] = session.execute(stmt).scalar_one()
     return numero_para_id
 
@@ -255,7 +286,7 @@ def main():
                 logger.warning("Nenhum documento em %s/%s no Postgres -- pulando candidato.", fonte_codigo, candidate_slug)
                 continue
 
-            for k, embedding_slug, emb_dir, result_txt, resumo_csv in combos:
+            for k, embedding_slug, emb_dir, result_txt, resumo_csv, rotulos_json in combos:
                 if embedding_slug not in EMBEDDING_SLUG_TO_KEY:
                     logger.warning("  Embedding desconhecido (ignorado): %s", embedding_slug)
                     continue
@@ -263,6 +294,7 @@ def main():
 
                 topics_palavras = parse_result_topic_txt(result_txt)
                 doc_assignments = parse_resumo_csv(resumo_csv)
+                rotulos = parse_rotulos_json(rotulos_json)
                 tamanhos = {}
                 for _, numero in doc_assignments:
                     tamanhos[numero] = tamanhos.get(numero, 0) + 1
@@ -281,15 +313,15 @@ def main():
                     "n_topicos": len(topics_palavras),
                 }
 
-                logger.info("  k=%d embedding=%s (%d docs, %d topicos)",
-                            k, embedding_key, len(doc_assignments), len(topics_palavras))
+                logger.info("  k=%d embedding=%s (%d docs, %d topicos, %d rotulos)",
+                            k, embedding_key, len(doc_assignments), len(topics_palavras), len(rotulos))
 
                 if args.dry_run:
                     continue
 
                 modelo_id = upsert_modelo(session, fonte_codigo, candidate_slug, embedding_key,
                                            embedding_nome_hf, k, treinado_em, parametros, metricas)
-                numero_para_topico_id = upsert_topicos(session, modelo_id, topics_palavras, tamanhos)
+                numero_para_topico_id = upsert_topicos(session, modelo_id, topics_palavras, tamanhos, rotulos)
                 n_dt = carregar_documento_topico(session, documento_topico_table, doc_assignments,
                                                   id_nativo_para_doc_id, numero_para_topico_id)
                 session.commit()

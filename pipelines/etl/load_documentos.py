@@ -129,7 +129,17 @@ def carregar_mapa_alvo_coleta(session, fonte_codigo: str) -> dict:
         select(AlvoColeta.canal, AlvoColeta.termo_busca, AlvoColeta.id)
         .where(AlvoColeta.fonte_codigo == fonte_codigo)
     ).all()
-    return {(canal, termo_busca): alvo_id for canal, termo_busca, alvo_id in linhas}
+    mapa = {}
+    for canal, termo_busca, alvo_id in linhas:
+        chave = (canal, termo_busca)
+        alvo_anterior = mapa.setdefault(chave, alvo_id)
+        if alvo_anterior != alvo_id:
+            raise RuntimeError(
+                f"Alvos ambiguos para fonte={fonte_codigo}, canal={canal!r}, "
+                f"termo={termo_busca!r}: {alvo_anterior} e {alvo_id}. "
+                "Execute seed_entidades.py para reconciliar os alvos."
+            )
+    return mapa
 
 
 def upsert_documentos(session, linhas: list) -> int:
@@ -185,10 +195,16 @@ def carregar_youtube(session, mongo_db, mapa_alvo: dict, limit: Optional[int]):
         if not video_id or not publicado_em:
             continue
 
+        # Canal de notícia (não mais o canal do próprio candidato) x candidato
+        # buscado dentro dele - mesmo padrão do Reddit (_subreddit_busca/_termo_busca).
         channel_id = doc.get("channelId")
-        alvo_id = mapa_alvo.get((channel_id, ""))
+        termo_busca = doc.get("_entidade_busca")
+        alvo_id = mapa_alvo.get((channel_id, termo_busca))
         if not alvo_id:
-            logger.warning("Vídeo %s: channel_id '%s' sem alvo_coleta cadastrado.", video_id, channel_id)
+            logger.warning(
+                "Vídeo %s: (channel_id=%s, candidato=%s) sem alvo_coleta cadastrado.",
+                video_id, channel_id, termo_busca,
+            )
             continue
 
         linhas.append({
@@ -226,11 +242,12 @@ def carregar_youtube(session, mongo_db, mapa_alvo: dict, limit: Optional[int]):
             continue
 
         channel_id = mapa_video_channel.get(doc.get("videoId"))
-        alvo_id = mapa_alvo.get((channel_id, ""))
+        termo_busca = doc.get("_entidade_busca")
+        alvo_id = mapa_alvo.get((channel_id, termo_busca))
         if not alvo_id:
             logger.warning(
-                "Comentário %s: não achei channel_id do vídeo %s (ou vídeo sem alvo_coleta).",
-                comment_id, doc.get("videoId"),
+                "Comentário %s: (channel_id=%s via vídeo %s, candidato=%s) sem alvo_coleta cadastrado.",
+                comment_id, channel_id, doc.get("videoId"), termo_busca,
             )
             continue
 
@@ -246,6 +263,9 @@ def carregar_youtube(session, mongo_db, mapa_alvo: dict, limit: Optional[int]):
             "metadados": {
                 "likeCount": doc.get("likeCount"),
                 "replyCount": doc.get("replyCount"),
+                # Id estável (não o nome) de quem comentou - platform-only, ver
+                # docstring de authorChannelId em youtube_collector.py.
+                "authorChannelId": doc.get("authorChannelId"),
             },
         })
 
@@ -347,6 +367,7 @@ def carregar_meta(session, mongo_db, mapa_alvo: dict, limit: Optional[int]):
                 "page_name": doc.get("page_name"),
                 "ad_delivery_stop_time": doc.get("ad_delivery_stop_time"),
                 "ad_creative_link_titles": doc.get("ad_creative_link_titles"),
+                "publisher_platforms": doc.get("publisher_platforms"),
             },
         })
 
