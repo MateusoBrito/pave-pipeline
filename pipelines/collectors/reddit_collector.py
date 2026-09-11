@@ -23,21 +23,21 @@ Como a coleta DIÁRIA funciona:
 """
 
 import argparse
-import os
-import time
 import logging
-from pathlib import Path
+import os
+import sys
+import time
+import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
-from pymongo import MongoClient, InsertOne
+from pymongo import InsertOne, MongoClient
 from pymongo.errors import BulkWriteError, PyMongoError
+import atexit
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+# Logger global que será configurado dinamicamente dentro do main()
 logger = logging.getLogger("reddit_collector")
 
 
@@ -62,7 +62,6 @@ def _carregar_env_do_projeto():
                 chave = chave.strip()
                 valor = valor.strip().strip('"').strip("'")
                 os.environ.setdefault(chave, valor)
-            logger.info("Variáveis carregadas de: %s", candidato)
             return
         if diretorio.parent == diretorio:
             break
@@ -97,7 +96,7 @@ ENDPOINT_POSTS = f"{BASE_URL}/api/posts/search"
 ENDPOINT_COMMENTS = f"{BASE_URL}/api/comments/search"
 
 API_LIMIT_POR_PAGINA = 100
-SLEEP_ENTRE_REQUESTS_SEGUNDOS = 10.0
+SLEEP_ENTRE_REQUESTS_SEGUNDOS = 20.0
 
 MAX_TENTATIVAS_POR_REQUISICAO = 5
 BACKOFF_INICIAL_SEGUNDOS = 15
@@ -170,10 +169,6 @@ def _buscar_pagina(endpoint: str, params: Dict) -> Optional[List[Dict]]:
             eh_transitorio = (
                 mensagem_api in MENSAGENS_ERRO_TRANSITORIO
                 or (resposta_erro is not None and resposta_erro.status_code == 429)
-                # Falha de conexão/rede (sem resposta HTTP nenhuma, ex: DNS,
-                # instabilidade momentânea de rede) também é tratada como
-                # transitória -- vale a pena tentar de novo em vez de desistir
-                # na primeira tentativa.
                 or resposta_erro is None
             )
 
@@ -355,10 +350,79 @@ def salvar_mongodb(dados: Dict[str, List[Dict]], subreddit: str, termo_busca: st
         if cliente is not None:
             cliente.close()
 
+# tratamento dos termos de busca -----------------------------------------------------------------------------
+
+def normalizar_expandir_termo(termo: str) -> list[str]:
+
+    termo = termo.strip()
+    
+    # Remove acentos para criar a variação sem acento
+    termo_sem_acento = ''.join(
+        c for c in unicodedata.normalize('NFD', termo)
+        if unicodedata.category(c) != 'Mn'
+    )
+    
+    # Coleta as variações com acento e sem acento
+    variacoes = {termo, termo_sem_acento}
+    
+    termos_finais = []
+    for var in variacoes:
+        # Se for nome composto com espaço adiciona aspas
+        if " " in var and not (var.startswith('"') and var.endswith('"')):
+            termos_finais.append(f'"{var}"')
+        else:
+            termos_finais.append(var)
+            
+    return termos_finais
+
 
 # ----------------------------------------------------------------------------
 # CLI / ORQUESTRAÇÃO
 # ----------------------------------------------------------------------------
+def _configurar_logger(subreddit: str, termo_busca: str) -> None:
+    """
+    Configura o logger para gerar um arquivo específico por combinação em logs/reddit_collector/
+    e enviar as mesmas mensagens para o terminal (stdout), funcionando dinamicamente
+    tanto localmente quanto dentro do container Docker/Airflow.
+    """
+    termo_slug = "".join(c if c.isalnum() else "_" for c in termo_busca.lower())
+    sub_slug = "".join(c if c.isalnum() else "_" for c in subreddit.lower())
+
+    # Resolve o caminho a partir da localização do próprio arquivo (pipelines/collectors/) -> sobe para a raiz do projeto
+    raiz_projeto = Path(__file__).resolve().parent.parent.parent
+    log_dir = raiz_projeto / "logs" / "reddit_collector"
+
+    # Cria a estrutura de pastas sem caminhos absolutos como /home/labpi
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = log_dir / f"reddit_{sub_slug}_{termo_slug}.log"
+
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+    # File Handler
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Stream Handler (Terminal/Airflow)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    logger.propagate = False
+
+    # Garante o flush e encerramento limpo de todos os handlers de log ao finalizar o processo
+    def fechar_logs():
+        for handler in logger.handlers:
+            handler.flush()
+            handler.close()
+
+    atexit.register(fechar_logs)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Coletor do Reddit (por subreddit + termo de busca)")
     parser.add_argument("--subreddit", type=str, required=True, help="Nome do subreddit (sem 'r/')")
@@ -367,16 +431,39 @@ def main():
     parser.add_argument("--data-fim", type=str, required=True, help="Data de fim (YYYY-MM-DD)")
     args = parser.parse_args()
 
+    # Configura o log dinâmico criando o arquivo em logs/reddit/reddit_<subreddit>_<termo>.log
+    _configurar_logger(args.subreddit, args.termo_busca)
+
     logger.info("=== Coletando r/%s para '%s' (%s a %s) ===",
                 args.subreddit, args.termo_busca, args.data_inicio, args.data_fim)
 
-    dados = coletar_dados(
-        subreddit=args.subreddit,
-        termo_busca=args.termo_busca,
-        data_inicio=args.data_inicio,
-        data_fim=args.data_fim,
-    )
+    termo_ne = normalizar_expandir_termo(args.termo_busca)
+
+    dados = {
+        "posts": [],
+        "comentarios": []
+    }
+
+    for termo in termo_ne:
+        logger.info("Buscando variação: %s", termo)
+
+        result = coletar_dados(
+            subreddit=args.subreddit,
+            termo_busca=termo,
+            data_inicio=args.data_inicio,
+            data_fim=args.data_fim,
+        )
+
+        dados["posts"].extend(result.get("posts", []))
+        dados["comentarios"].extend(result.get("comentarios", []))
+
+    for doc in dados["posts"] + dados["comentarios"]:
+        doc["_termo_busca"] = args.termo_busca
+    
     salvar_mongodb(dados, subreddit=args.subreddit, termo_busca=args.termo_busca)
+
+    logger.info("=== Coletando r/%s para '%s' (%s a %s) ===\n\n",
+                    args.subreddit, args.termo_busca, args.data_inicio, args.data_fim)
 
 
 if __name__ == "__main__":

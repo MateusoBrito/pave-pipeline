@@ -53,6 +53,10 @@ FIELDS = ",".join([
     "ad_creative_link_titles",
     "spend",
     "impressions",
+    # Faltava - sem isso, o filtro de plataforma (Facebook/Instagram) no webapp nunca
+    # batia com nenhum anúncio: metadados.publisher_platforms simplesmente não existia
+    # em nenhum documento (ver has_platform() em pave-webapp/api/app/queries/metadata.py).
+    "publisher_platforms",
 ])
 
 class TokenManager:
