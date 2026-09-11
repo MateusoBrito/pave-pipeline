@@ -16,6 +16,7 @@ x-airflow-common:
     - ./config:/opt/airflow/config
     - ./src:/opt/airflow/src
     - ./logs:/opt/airflow/logs
+    - ./reports:/opt/airflow/reports
     - ./data/topic_modeling:/opt/airflow/results_modelagem
     - /home/labpi/pave-tm:/opt/airflow/pave-tm
   user: "${AIRFLOW_UID:-50000}:0"
@@ -54,7 +55,7 @@ services:
     container_name: panorama-postgres
     restart: always
     ports:
-      - "5432:5432"
+      - "19032:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -111,6 +112,15 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # Único knob de cadência da modelagem de tópicos: quantos dias tem um "período"
+      # (modelo ajustado por período) e a partir de qual data a grade de períodos é
+      # contada. Lido tanto por pave-tm (pipeline/config.py) quanto pelas DAGs de
+      # modelagem/inferência (dag_topic_modeling.py, infer_topic.py) - mudar SÓ isto
+      # aqui (e reiniciar o container) troca diário <-> semanal <-> qualquer N dias,
+      # sem editar nenhum desses arquivos. PERIOD_EPOCH deve ficar numa segunda-feira
+      # se PERIOD_DAYS=7, pra bater com semana ISO; qualquer data serve pra outros N.
+      - TOPIC_MODEL_PERIOD_DAYS=${TOPIC_MODEL_PERIOD_DAYS:-7}
+      - TOPIC_MODEL_PERIOD_EPOCH=${TOPIC_MODEL_PERIOD_EPOCH:-2026-07-27}
     ports:
       - "8080:8080"
     volumes:
@@ -119,6 +129,7 @@ services:
       - ./config:/opt/airflow/config
       - ./src:/opt/airflow/src
       - ./logs:/opt/airflow/logs
+      - ./reports:/opt/airflow/reports
       - ./data/topic_modeling:/opt/airflow/results_modelagem
       - /home/labpi/pave-tm:/opt/airflow/pave-tm
     command: standalone

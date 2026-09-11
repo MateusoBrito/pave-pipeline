@@ -75,7 +75,7 @@ def run_historico():
             nova_analise = Sentimento(
                 documento_id=doc.id,
                 polaridade=mapa_polaridade[classe_numero],
-                modelo_id=1 
+                modelo_id=130
             )
             registros_analise.append(nova_analise)
 

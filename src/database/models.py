@@ -94,6 +94,11 @@ class AlvoColeta(Base):
     entidade_codigo = Column(String(40), ForeignKey('entidade.codigo', ondelete='CASCADE'), nullable=False)
     fonte_codigo = Column(String(20), ForeignKey('fonte.codigo'), nullable=False)
     canal = Column(String(160), nullable=False)
+    # Nome legível do canal quando `canal` em si não é (ex: channel_id do YouTube,
+    # page_id do Meta) - só o YouTube popula isso hoje (seed_alvo_coleta, a partir de
+    # entities.yaml/youtube.canais_noticia); NULL para os outros (o rótulo deles já sai
+    # legível de outro jeito - ver canal_label() no webapp).
+    rotulo = Column(String(160), nullable=True)
     termo_busca = Column(String(160), nullable=False, default="")
 
     tipo = Column(SQLEnum(TipoTermoEnum, name='tipo_termo'), nullable=False)

@@ -50,8 +50,8 @@ def run_diario():
     print(f"Encontrados {len(docs_do_dia)} novos textos de hoje para classificar.")
 
     # 4. Carrega o Modelo
-    pasta_modelo = os.path.join(os.path.dirname(__file__), "meu_bertimbau")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pasta_modelo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meu_bertimbau")
+    device = torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained(pasta_modelo)
     model = AutoModelForSequenceClassification.from_pretrained(pasta_modelo).to(device)
     model.eval()
@@ -76,7 +76,7 @@ def run_diario():
             nova_analise = Sentimento(
                 documento_id=doc.id,
                 polaridade=mapa_polaridade[previsao_idx[j].item()],
-                modelo_id=1 
+                modelo_id=130
             )
             registros_analise.append(nova_analise)
 
