@@ -43,6 +43,7 @@ REDDIT_SCRIPT     = os.path.join(COLLECTORS_DIR, "reddit_collector.py")
 YOUTUBE_SCRIPT    = os.path.join(COLLECTORS_DIR, "youtube_collector.py")
 SEED_SCRIPT       = os.path.join(ETL_DIR,        "seed_entidades.py")
 LOAD_SCRIPT       = os.path.join(ETL_DIR,        "load_documentos.py")
+HASHTAGS_SCRIPT   = os.path.join(ETL_DIR,        "load_hashtags.py")
 
 # ---------------------------------------------------------------------------
 # Carrega pipeline.yaml  (configuracoes operacionais da DAG)
@@ -163,7 +164,7 @@ with DAG(
             f"python3 {META_SCRIPT} "
             "--entidade {{ params.page_id }} "
             "--data-inicio {{ data_interval_start | ds }} "
-            "--data-fim {{ macros.ds_add(data_interval_start | ds, 1) }}"
+            "--data-fim {{ data_interval_start | ds }}"
         ),
         pool=COLETA_POOL,
     ).expand(params=meta_params)
@@ -244,6 +245,13 @@ with DAG(
         bash_command=f"python3 {LOAD_SCRIPT} --fontes meta",
     )
 
+    load_hashtags = BashOperator(
+        task_id="load_hashtags",
+        bash_command=f"python3 {HASHTAGS_SCRIPT}",
+    )
+
     postgres_loaded = EmptyOperator(task_id="postgres_loaded", trigger_rule=TriggerRule.ALL_DONE)
 
-    all_collected >> seed_entidades >> [load_youtube, load_reddit, load_meta] >> postgres_loaded
+    cargas = [load_youtube, load_reddit, load_meta]
+    
+    all_collected >> seed_entidades >> cargas >> load_hashtags >> postgres_loaded

@@ -6,7 +6,7 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 
-from common.datasets import RAW_META  # ajuste o import conforme o PYTHONPATH do seu projeto
+from common.datasets import RAW_META
 
 file_path = os.path.join(os.path.dirname(__file__), "..", "config", "entities.yaml")
 try:

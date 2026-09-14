@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
+from sqlalchemy import UniqueConstraint
 import enum
 
 Base = declarative_base()
@@ -182,6 +183,7 @@ class Topico(Base):
     revisado = Column(Boolean, nullable=False, default=False)
     palavras_chave = Column(ARRAY(Text))
     tamanho = Column(Integer)
+    descricao = Column(String, nullable=True)
 
     __table_args__ = (
         Index('idx_topico_modelo_numero', modelo_id, numero, unique=True),
@@ -204,4 +206,17 @@ class DocumentoTopico(Base):
 
     __table_args__ = (
         Index('idx_doc_topico_topico', topico_id),
+    )
+
+class CandidatoHashtag(Base):
+    __tablename__ = 'candidato_hashtag'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    fonte_codigo = Column(String(50), nullable=False)     
+    entidade_codigo = Column(String(50), nullable=False)  
+    hashtag = Column(String(100), nullable=False)  
+    contagem = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint('fonte_codigo', 'entidade_codigo', 'hashtag', name='uix_candidato_hashtag'),
     )

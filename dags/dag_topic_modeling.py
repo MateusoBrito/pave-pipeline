@@ -131,7 +131,7 @@ with DAG(
     # na GPU - rodar várias ao mesmo tempo estoura memória.
     max_active_tasks=1,
     tags=["nlp", "modeling", "topicos", "diario"],
-    is_paused_upon_creation=True,
+    is_paused_upon_creation=False,
 ) as dag:
 
     gate_periodo = ShortCircuitOperator(

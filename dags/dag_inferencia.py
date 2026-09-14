@@ -88,7 +88,7 @@ with DAG(
     # as tasks uma após a outra em vez de deixá-las concorrentes).
     max_active_tasks=1,
     tags=["nlp", "inferencia", "topicos"],
-    is_paused_upon_creation=True,
+    is_paused_upon_creation=False,
 ) as dag:
 
     tasks_inferencia = []

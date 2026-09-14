@@ -202,7 +202,16 @@ def upsert_topicos(session, modelo_id: int, topics_palavras: dict, tamanhos: dic
     """
     numero_para_id = {}
     for numero, palavras in topics_palavras.items():
-        rotulo = rotulos.get(numero)
+        rotulo_data = rotulos.get(numero) or {}
+        
+        # Extrai titulo e descricao do novo JSON, mantendo compatibilidade com textos antigos
+        if isinstance(rotulo_data, dict):
+            rotulo_texto = rotulo_data.get("titulo")
+            descricao_texto = rotulo_data.get("descricao")
+        else:
+            rotulo_texto = rotulo_data
+            descricao_texto = None
+
         stmt = (
             pg_insert(Topico)
             .values(
@@ -210,19 +219,24 @@ def upsert_topicos(session, modelo_id: int, topics_palavras: dict, tamanhos: dic
                 numero=numero,
                 palavras_chave=palavras,
                 tamanho=tamanhos.get(numero, 0),
-                rotulo=rotulo,
+                rotulo=rotulo_texto,     
+                descricao=descricao_texto, 
             )
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=[Topico.modelo_id, Topico.numero],
+            index_elements=['modelo_id', 'numero'],
             set_=dict(
-                palavras_chave=palavras,
-                tamanho=tamanhos.get(numero, 0),
+                palavras_chave=stmt.excluded.palavras_chave,
+                tamanho=stmt.excluded.tamanho,
                 rotulo=case(
-                    (Topico.revisado, Topico.rotulo),
-                    else_=func.coalesce(stmt.excluded.rotulo, Topico.rotulo),
+                    (Topico.revisado == True, Topico.rotulo),
+                    else_=stmt.excluded.rotulo
                 ),
-            ),
+                descricao=case(
+                    (Topico.revisado == True, Topico.descricao),
+                    else_=stmt.excluded.descricao
+                )
+            )
         ).returning(Topico.id)
         numero_para_id[numero] = session.execute(stmt).scalar_one()
     return numero_para_id
